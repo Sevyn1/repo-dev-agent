@@ -10,6 +10,7 @@ Usage:
 """
 
 import os
+import shlex
 from pathlib import Path
 import difflib
 import shutil
@@ -58,6 +59,7 @@ def color(text: str, c: str) -> str:
 # SPINNER, PROGRESS LOGGER, STAGES, PROGRESS BAR
 # ============================================================
 
+
 class Spinner:
     def __init__(self, label: str = "Working"):
         self.label = label
@@ -75,9 +77,7 @@ class Spinner:
         for c in itertools.cycle("|/-\\"):
             if not self.running:
                 break
-            sys.stdout.write(
-                f"\r{color(self.label, FG_CYAN)} {color(c, FG_GRAY)}"
-            )
+            sys.stdout.write(f"\r{color(self.label, FG_CYAN)} {color(c, FG_GRAY)}")
             sys.stdout.flush()
             time.sleep(0.1)
         sys.stdout.write("\r" + " " * (len(self.label) + 8) + "\r")
@@ -140,6 +140,7 @@ class LoadingStage:
 
     Use for higher-level operations (agent run, shell, file IO).
     """
+
     def __init__(self, label: str, show_stage: bool = False):
         self.label = label
         self.spinner = Spinner(label)
@@ -166,13 +167,16 @@ class LoadingStage:
             if SHOW_TRACE or VERBOSE:
                 traceback.print_exception(exc_type, exc_val, exc_tb)
             else:
-                ProgressLogger.info("Run again with --trace or --verbose for full stack trace.")
+                ProgressLogger.info(
+                    "Run again with --trace or --verbose for full stack trace."
+                )
         # Do NOT suppress exception
         return False
 
 
 class ProgressBar:
     """Simple text progress bar based on a known maximum."""
+
     def __init__(self, total: int, label: str = "Progress"):
         self.total = max(total, 1)
         self.label = label
@@ -187,9 +191,7 @@ class ProgressBar:
         filled = int(frac * self.width)
         bar = "█" * filled + "-" * (self.width - filled)
         percent = int(frac * 100)
-        sys.stdout.write(
-            f"\r{color(self.label, FG_CYAN)} [{bar}] {percent:3d}%"
-        )
+        sys.stdout.write(f"\r{color(self.label, FG_CYAN)} [{bar}] {percent:3d}%")
         sys.stdout.flush()
 
     def finish(self):
@@ -252,11 +254,13 @@ def setup_history():
 # PROJECT PROMPT
 # ============================================================
 
+
 def ensure_project_prompt_file() -> None:
     if os.path.exists(PROMPT_PATH):
         return
 
-    template = textwrap.dedent(f"""
+    template = (
+        textwrap.dedent(f"""
     # Project Prompt for {PROJECT_KEY}
 
     Describe this project for the agent. This file is NOT code; it's context.
@@ -269,7 +273,9 @@ def ensure_project_prompt_file() -> None:
     - Anything "weird" about this project the agent should know.
 
     The more you fill this in, the better its decisions will be.
-    """).strip() + "\n"
+    """).strip()
+        + "\n"
+    )
 
     with open(PROMPT_PATH, "w", encoding="utf-8") as f:
         f.write(template)
@@ -288,6 +294,7 @@ def load_project_prompt() -> str:
 # PATH NORMALIZATION
 # ============================================================
 
+
 def _normalize_path(path: str) -> str:
     root = Path(PROJECT_ROOT).resolve()
     candidate = (root / path).resolve()
@@ -296,7 +303,10 @@ def _normalize_path(path: str) -> str:
     except ValueError:
         raise ValueError("Path escapes project root; not allowed.") from None
     blocked = {".git", ".dev_agent", "id_rsa", "id_ed25519", "credentials.json"}
-    if any(part in blocked or part == ".env" or part.startswith(".env.") for part in relative.parts) or candidate.suffix.lower() in {".pem", ".key"}:
+    if any(
+        part in blocked or part == ".env" or part.startswith(".env.")
+        for part in relative.parts
+    ) or candidate.suffix.lower() in {".pem", ".key"}:
         raise ValueError("Credential or internal-state paths are not allowed.")
     return str(relative)
 
@@ -305,7 +315,10 @@ def _normalize_path(path: str) -> str:
 # TOOLS
 # ============================================================
 
-def list_project_files(subdir: str = ".", pattern: str = "*", max_results: int = 200) -> list[str]:
+
+def list_project_files(
+    subdir: str = ".", pattern: str = "*", max_results: int = 200
+) -> list[str]:
     """List bounded, non-sensitive project files without following symlinks."""
     if not 1 <= max_results <= 5000:
         raise ValueError("max_results must be 1–5000")
@@ -316,7 +329,13 @@ def list_project_files(subdir: str = ".", pattern: str = "*", max_results: int =
     ignored = {"node_modules", "DerivedData", "build", "dist", "Pods", "__pycache__"}
     results = []
     for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
-        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in ignored and not Path(dirpath, d).is_symlink())
+        dirnames[:] = sorted(
+            d
+            for d in dirnames
+            if not d.startswith(".")
+            and d not in ignored
+            and not Path(dirpath, d).is_symlink()
+        )
         for name in sorted(filenames):
             candidate = Path(dirpath, name)
             if candidate.is_symlink():
@@ -343,18 +362,25 @@ def read_file(path: str, start_line: int = 1, end_line: int | None = None) -> st
     if start_line < 1 or (end_line is not None and end_line < start_line):
         raise ValueError("Invalid line range")
     lines = full.read_text(encoding="utf-8").splitlines(keepends=True)
-    stop = min(end_line if end_line is not None else start_line + 1999, start_line + 1999)
-    return "".join(lines[start_line - 1:stop])
-
+    stop = min(
+        end_line if end_line is not None else start_line + 1999, start_line + 1999
+    )
+    return "".join(lines[start_line - 1 : stop])
 
 
 def _confirm_action(description: str) -> bool:
     try:
-        return input(f"\n{description}\nApprove this action? [y/N] ").strip().lower() == "y"
+        return (
+            input(f"\n{description}\nApprove this action? [y/N] ").strip().lower()
+            == "y"
+        )
     except (EOFError, KeyboardInterrupt):
         return False
 
-def apply_patch(path: str, original_snippet: str, updated_snippet: str, occurrences: int = 1) -> str:
+
+def apply_patch(
+    path: str, original_snippet: str, updated_snippet: str, occurrences: int = 1
+) -> str:
     """Review and apply a bounded replacement, backing up the original first."""
     rel = _normalize_path(path)
     full = Path(PROJECT_ROOT) / rel
@@ -369,12 +395,21 @@ def apply_patch(path: str, original_snippet: str, updated_snippet: str, occurren
     if occurrences < 0 or occurrences > 1000:
         raise ValueError("occurrences must be 0 (all) or 1–1000")
     if occurrences == 1 and matches > 1:
-        raise ValueError("Snippet is ambiguous; provide more context or an explicit replacement count")
+        raise ValueError(
+            "Snippet is ambiguous; provide more context or an explicit replacement count"
+        )
     count = matches if occurrences == 0 else min(occurrences, matches)
     new_content = content.replace(original_snippet, updated_snippet, count)
     if new_content == content:
         return "No change required."
-    diff = "".join(difflib.unified_diff(content.splitlines(keepends=True), new_content.splitlines(keepends=True), fromfile=rel, tofile=rel))
+    diff = "".join(
+        difflib.unified_diff(
+            content.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile=rel,
+            tofile=rel,
+        )
+    )
     if len(diff) > 12000:
         raise ValueError("Patch is too large for review; split it into smaller changes")
     if not _confirm_action(f"Proposed patch to {rel}:\n{diff}"):
@@ -397,14 +432,24 @@ def run_shell(command: str, timeout_seconds: int = 30) -> str:
     if not _confirm_action(f"Execute in {PROJECT_ROOT}:\n{command}"):
         return "Command declined; nothing executed."
     import subprocess
-    result = subprocess.run(command, cwd=PROJECT_ROOT, shell=True, capture_output=True, text=True, timeout=timeout_seconds)
+
+    result = subprocess.run(
+        command,
+        cwd=PROJECT_ROOT,
+        shell=True,
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+    )
     output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
     if len(output) > 4000:
         output = output[:4000] + "\n...[truncated]..."
     return f"Exit code: {result.returncode}\n{output or '(no output)'}"
 
 
-def analyze_image(path: str, task: str = "Describe relevant layout issues or error messages.") -> str:
+def analyze_image(
+    path: str, task: str = "Describe relevant layout issues or error messages."
+) -> str:
     """Send an operator-approved image with the Responses API's image schema."""
     rel = _normalize_path(path)
     full = Path(PROJECT_ROOT) / rel
@@ -412,16 +457,38 @@ def analyze_image(path: str, task: str = "Describe relevant layout issues or err
         raise FileNotFoundError(f"Image file not found: {rel}")
     if full.stat().st_size > 5 * 1024 * 1024:
         raise ValueError("Image exceeds the 5 MiB limit")
-    mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}.get(full.suffix.lower())
+    mime = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+    }.get(full.suffix.lower())
     if not mime:
         raise ValueError("Use PNG, JPEG, WebP or GIF")
-    if not _confirm_action(f"Send {rel} to OpenAI for image analysis? This may incur API usage charges."):
+    if not _confirm_action(
+        f"Send {rel} to OpenAI for image analysis? This may incur API usage charges."
+    ):
         return "Image analysis declined; nothing sent."
     global client
     if client is None:
         client = OpenAI(timeout=30)
     b64_data = base64.b64encode(full.read_bytes()).decode("ascii")
-    response = client.responses.create(model="gpt-4.1-mini", input=[{"role": "user", "content": [{"type": "input_text", "text": task}, {"type": "input_image", "image_url": f"data:{mime};base64,{b64_data}"}]}])
+    response = client.responses.create(
+        model="gpt-4.1-mini",
+        input=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": task},
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:{mime};base64,{b64_data}",
+                    },
+                ],
+            }
+        ],
+    )
     return response.output_text.strip() or "The model returned no text."
 
 
@@ -479,7 +546,9 @@ BASE_INSTRUCTIONS = textwrap.dedent("""
 def build_instructions() -> str:
     project_prompt = load_project_prompt()
     if project_prompt.strip():
-        return BASE_INSTRUCTIONS + "\n\n" + "PROJECT-SPECIFIC CONTEXT:\n" + project_prompt
+        return (
+            BASE_INSTRUCTIONS + "\n\n" + "PROJECT-SPECIFIC CONTEXT:\n" + project_prompt
+        )
     else:
         return BASE_INSTRUCTIONS
 
@@ -487,21 +556,70 @@ def build_instructions() -> str:
 agent = None
 session = None
 
+
 def initialize_runtime():
     global agent, session
     os.makedirs(STORAGE_DIR, exist_ok=True)
-    agent = Agent(name=f"{PROJECT_KEY}_dev_agent", instructions=build_instructions(), model="gpt-4.1-mini", tools=[function_tool(tool) for tool in [list_project_files, read_file, apply_patch, run_shell, analyze_image]])
+    agent = Agent(
+        name=f"{PROJECT_KEY}_dev_agent",
+        instructions=build_instructions(),
+        model="gpt-4.1-mini",
+        tools=[
+            function_tool(tool)
+            for tool in [
+                list_project_files,
+                read_file,
+                apply_patch,
+                run_shell,
+                analyze_image,
+            ]
+        ],
+    )
     session = SQLiteSession(PROJECT_KEY, db_path=SESSION_PATH)
+
+
+def _extract_image_path(text: str) -> str | None:
+    """Recognize supported, existing images inside the selected workspace."""
+    try:
+        candidates = shlex.split(text)
+    except ValueError:
+        candidates = text.split()
+    for token in candidates:
+        token = token.strip(" '\"")
+        if Path(token).suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+            continue
+        try:
+            rel = _normalize_path(token)
+        except ValueError:
+            continue
+        if (Path(PROJECT_ROOT) / rel).is_file():
+            return rel
+    return None
+
 
 def main():
     global VERBOSE, QUIET, SHOW_TRACE
 
-    parser = argparse.ArgumentParser(description="dev_agent — per-repo development assistant")
-    parser.add_argument("--verbose", action="store_true", help="Verbose logging (debug, traces).")
-    parser.add_argument("--quiet", action="store_true", help="Minimal output (only errors and final answer).")
-    parser.add_argument("--trace", action="store_true", help="Show full stack traces on errors.")
+    parser = argparse.ArgumentParser(
+        description="dev_agent — per-repo development assistant"
+    )
+    parser.add_argument(
+        "--verbose", action="store_true", help="Verbose logging (debug, traces)."
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Minimal output (only errors and final answer).",
+    )
+    parser.add_argument(
+        "--trace", action="store_true", help="Show full stack traces on errors."
+    )
 
-    parser.add_argument("--check", action="store_true", help="List project files without model calls or state creation.")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="List project files without model calls or state creation.",
+    )
     args = parser.parse_args()
     if args.check:
         print("Local tool check: no model calls")
@@ -510,7 +628,9 @@ def main():
         return
     load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
     if not os.environ.get("OPENAI_API_KEY"):
-        parser.error("Set OPENAI_API_KEY for live mode, or use --check for an offline check")
+        parser.error(
+            "Set OPENAI_API_KEY for live mode, or use --check for an offline check"
+        )
     initialize_runtime()
     VERBOSE = args.verbose
     QUIET = args.quiet
@@ -526,8 +646,14 @@ def main():
         if VERBOSE:
             print(color("Mode: VERBOSE", FG_GRAY))
         print()
-        print(color("Tip:", FG_CYAN), "Edit the project prompt file to teach the agent about this repo.")
-        print(color("Tip:", FG_CYAN), "You can paste an image path (e.g. 'Screenshots/onboarding_bug.png') to analyze a screenshot.")
+        print(
+            color("Tip:", FG_CYAN),
+            "Edit the project prompt file to teach the agent about this repo.",
+        )
+        print(
+            color("Tip:", FG_CYAN),
+            "You can paste an image path (e.g. 'Screenshots/onboarding_bug.png') to analyze a screenshot.",
+        )
         print()
 
     while True:
@@ -549,9 +675,9 @@ def main():
         if img_path:
             user_input = (
                 f'The user provided a screenshot at path "{img_path}". '
-                f'First, call analyze_image on that path to understand the UI or error state. '
-                f'Then, based on the analysis, help the user diagnose or fix issues in this repository. '
-                f'Original user text: {user_input!r}'
+                f"First, call analyze_image on that path to understand the UI or error state. "
+                f"Then, based on the analysis, help the user diagnose or fix issues in this repository. "
+                f"Original user text: {user_input!r}"
             )
 
         try:
@@ -571,7 +697,9 @@ def main():
             if SHOW_TRACE:
                 traceback.print_exc()
             else:
-                ProgressLogger.info("Run again with --trace or --verbose for full stack trace.")
+                ProgressLogger.info(
+                    "Run again with --trace or --verbose for full stack trace."
+                )
 
 
 if __name__ == "__main__":
